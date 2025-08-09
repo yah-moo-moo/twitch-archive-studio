@@ -12,5 +12,8 @@
   "bugs": {
     "url": "https://github.com/yah-moo-moo/twitch-archive-studio/issues"
   },
-  "homepage": "https://github.com/yah-moo-moo/twitch-archive-studio#readme"
+  "homepage": "https://github.com/yah-moo-moo/twitch-archive-studio#readme",
+  "dependencies": {
+    "express": "^5.1.0"
+  }
 }
