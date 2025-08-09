@@ -1,0 +1,16 @@
+{
+  "name": "twitch-archive-studio",
+  "version": "0.0.1",
+  "description": "twitch-archive-studio",
+  "main": "index.js",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yah-moo-moo/twitch-archive-studio.git"
+  },
+  "author": "yahmoomoo",
+  "bugs": {
+    "url": "https://github.com/yah-moo-moo/twitch-archive-studio/issues"
+  },
+  "homepage": "https://github.com/yah-moo-moo/twitch-archive-studio#readme"
+}
