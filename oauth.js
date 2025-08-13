@@ -8,7 +8,7 @@ const STATE = {
     EXPIRED: 'expired'
 };
 
-export default class OAuthClient {
+class OAuthClient {
     #options = null;
     #services = {};
 
@@ -103,3 +103,7 @@ export default class OAuthClient {
         }
     }
 }
+
+const client = await OAuthClient.create({ path: 'tokens.json' })
+
+export default client;
