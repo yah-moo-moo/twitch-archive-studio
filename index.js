@@ -1,9 +1,12 @@
+import OAuthClient from './oauth.js';
+
 import fs from 'node:fs/promises';
 import express from 'express';
 import crypto from 'node:crypto';
 
+let oauth = await OAuthClient.create({ path: 'tokens.json' });
+
 let config = null;
-let tokens = null;
 
 async function get_app_config() {
     try {
@@ -17,121 +20,15 @@ async function get_app_config() {
     }
 }
 
-async function load_oauth_tokens() {
-    try {
-        console.log('loading oauth tokens');
-
-        const text = await fs.readFile('tokens.json');
-        tokens = JSON.parse(text);
-    } catch (e) {
-        console.log('error loading tokens');
-        console.log(e);
-    }
-}
-
-async function save_oauth_tokens() {
-    try {
-        console.log('saving oauth tokens');
-
-        const text = JSON.stringify(tokens, null, '\t');
-        await fs.writeFile('tokens.json', text);
-    } catch (e) {
-        console.log('error saving oauth tokens');
-        console.log(e);
-    }
-}
-
-//---
-
-const TOKEN_STATE = {
-    MISSING: 'missing',
-    VALID: 'valid',
-    EXPIRED: 'expired'
-};
-
-function check_oauth_token_state(service) {
-    console.log(`checking oauth token state for service ${service}`);
-    let result = null;
-
-    if (tokens[service].access_token) {
-        if (tokens[service].expires_at - 300 > Date.now()) {
-            result = TOKEN_STATE.VALID;
-        } else {
-            result = TOKEN_STATE.EXPIRED;
-        }
-    } else {
-        result = TOKEN_STATE.MISSING;
-    }
-
-    console.log(`result: ${result}`);
-    return result;
-}
-
-async function create_oauth_token(service) {
-    console.log(`creating oauth token state for service ${service}`);
-
-    const body = new URLSearchParams({
-        grant_type: tokens[service].grant_type,
-        client_id: tokens[service].client_id,
-        client_secret: tokens[service].client_secret
-    });
-
-    console.log(`requesting token from ${tokens[service].token_uri}`);
-    const res = await fetch(tokens[service].token_uri, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body
-    });
-
-    const json = await res.json();
-
-    if (res.status == 200) {
-        tokens[service].access_token = json.access_token;
-        tokens[service].expires_at = Date.now() + json.expires_in * 1000;
-        if (json.refresh_token) { tokens[service].refresh_token = json.refresh_token; }
-
-        console.log(`created oauth token for service ${service} with expiry ${tokens[service].expires_at}`);
-        await save_oauth_tokens();
-        return true;
-    } else {
-        console.log(`failed to create oauth token for service ${service}`);
-        console.log(json);
-        return false;
-    }
-}
-
-async function renew_oauth_token(service) {
-    console.log(`renewing oauth token for service ${service}`);
-
-    if (tokens[service].grant_type == "client_credentials") {
-        await create_oauth_token(service);
-    }
-}
-
-async function get_oauth_token(service) {
-    console.log(`getting oauth token for service ${service}`);
-
-    const state = check_oauth_token_state(service);
-    if (state == TOKEN_STATE.MISSING || state == TOKEN_STATE.EXPIRED) {
-        await renew_oauth_token(service);
-    }
-
-    if (check_oauth_token_state(service) == TOKEN_STATE.VALID) {
-        return tokens[service].access_token;
-    }
-}
-
 //---
 
 async function twitch_api_validate_token() {
     console.log(`testing twitch api`);
-    const token = await get_oauth_token('twitch');
+    const token = await oauth.get('twitch');
 
     const res = await fetch('https://id.twitch.tv/oauth2/validate', {
         headers: {
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${token.access_token}`
         }
     });
 
@@ -142,13 +39,12 @@ async function twitch_api_validate_token() {
 }
 
 async function twitch_api_get_all_eventsub_subscriptions() {
-    const token = await get_oauth_token('twitch');
-    if (token == null) { return null; }
+    const token = await oauth.get('twitch');
 
     const res = await fetch('https://api.twitch.tv/helix/eventsub/subscriptions', {
         headers: {
-            'Client-Id': tokens['twitch'].client_id,
-            Authorization: `Bearer ${token}`
+            'Client-Id': token.client_id,
+            Authorization: `Bearer ${token.access_token}`
         }
     });
 
@@ -158,8 +54,7 @@ async function twitch_api_get_all_eventsub_subscriptions() {
 }
 
 async function twitch_api_create_eventsub_subscription(type, user_id) {
-    const token = await get_oauth_token('twitch');
-    if (token == null) { return null; }
+    const token = await oauth.get('twitch');
 
     const callback_uri = new URL(config.twitch.eventsub.callback_uri_path, get_eventsub_callback_uri_base());
     const body = {
@@ -178,9 +73,9 @@ async function twitch_api_create_eventsub_subscription(type, user_id) {
     const res = await fetch('https://api.twitch.tv/helix/eventsub/subscriptions', {
         method: 'post',
         headers: {
-            'Client-Id': tokens['twitch'].client_id,
+            'Client-Id': token.client_id,
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${token.access_token}`
         },
         body: JSON.stringify(body)
     });
@@ -198,14 +93,13 @@ async function twitch_api_create_eventsub_subscription(type, user_id) {
 async function twitch_api_delete_eventsub_subscription(id) {
     console.log(`deleting eventsub subscription ${id}`);
 
-    const token = await get_oauth_token('twitch');
-    if (token == null) { return null; }
+    const token = await oauth.get('twitch');
 
     const res = await fetch(`https://api.twitch.tv/helix/eventsub/subscriptions?id=${id}`, {
         method: 'delete',
         headers: {
-            'Client-Id': tokens['twitch'].client_id,
-            Authorization: `Bearer ${token}`
+            'Client-Id': token.client_id,
+            Authorization: `Bearer ${token.access_token}`
         }
     });
 
@@ -299,7 +193,6 @@ async function create_all_eventsub_subscriptions() {
 //---
 
 await get_app_config();
-await load_oauth_tokens();
 if (!await twitch_api_validate_token()) {
     process.exit(1);
 }
