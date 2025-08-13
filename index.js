@@ -1,10 +1,12 @@
 import OAuthClient from './oauth.js';
+import logger from './logger.js';
 
 import fs from 'node:fs/promises';
 import express from 'express';
 import crypto from 'node:crypto';
+import winston from 'winston';
 
-let oauth = await OAuthClient.create({ path: 'tokens.json' });
+let oauth = await OAuthClient.create({ logger, path: 'tokens.json' });
 
 let config = null;
 

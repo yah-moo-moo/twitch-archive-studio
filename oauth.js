@@ -1,3 +1,5 @@
+import logger from './logger.js';
+
 import fs from 'node:fs/promises';
 
 const STATE = {
@@ -17,29 +19,38 @@ export default class OAuthClient {
      */
     static async create(options) {
         const client = new OAuthClient();
+
         client.#options = options;
+
         await client.#load();
         return client;
     }
 
     async #load() {
+        logger.debug('load oauth config');
         this.#services = JSON.parse(await fs.readFile(this.#options.path));
     }
 
     async #save() {
+        logger.debug('save oauth config');
         await fs.writeFile(this.#options.path, JSON.stringify(this.#services, null, '\t'));
     }
 
     #check_state(service) {
+        let state = null;
+
         if (this.#services[service].access_token) {
             if (this.#services[service].expires_at - 300 > Date.now()) {
-                return STATE.VALID;
+                state = STATE.VALID;
             } else {
-                return STATE.EXPIRED;
+                state = STATE.EXPIRED;
             }
         } else {
-            return STATE.MISSING;
+            state = STATE.MISSING;
         }
+
+        logger.debug(`${service} token state: ${state}`);
+        return state;
     }
 
     async create(service) {
