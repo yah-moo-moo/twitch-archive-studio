@@ -4,6 +4,8 @@ import logger from './logger.js';
 import fs from 'node:fs/promises';
 import express from 'express';
 import crypto from 'node:crypto';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
 
 let oauth = await OAuthClient.create({ logger, path: 'tokens.json' });
 
@@ -109,6 +111,40 @@ async function twitch_api_delete_eventsub_subscription(id) {
 
 //---
 
+/**
+ * 
+ * @param {Object} options 
+ * @param {Object} options.token 
+ * @param {Object} options.path 
+ * @param {Object} options.url
+ * @returns Promise<void>
+ */
+async function spawn_streamlink_instance(options) {
+    return new Promise((resolve) => {
+        const args = [
+            `--twitch-api-header=Authorization=OAuth ${options.token}`,
+            '--output', options.path,
+            '--hls-live-restart',
+            '--loglevel', 'debug',
+            '--stream-segment-threads', '10',
+            '--stream-timeout', '100',
+            '--hls-segment-queue-threshold', '0',
+            '--url', options.url,
+            '--default-stream', 'best'
+        ];
+
+        logger.debug('spawn streamlink instance');
+        logger.debug([config.streamlink.path, args].flat().join(' '));
+        const process = spawn(config.streamlink.path, args, { shell: false, windowsHide: true, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+
+        process.stderr.on('data', (data) => { console.log(data.toString()); });
+        process.stdout.on('data', (data) => { console.log(data.toString()); });
+        process.on('exit', () => resolve());
+    });
+}
+
+//---
+
 const EVENTSUB_SECRET = crypto.randomBytes(32).toString('hex');
 
 function verify_eventsub_callback(req, res) {
@@ -116,9 +152,27 @@ function verify_eventsub_callback(req, res) {
     res.set('Content-Type', 'text/plain').status(200).send(req.body.challenge);
 }
 
+const SUB_TYPE = {
+    STREAM_ONLINE: 'stream.online',
+    STREAM_OFFLINE: 'stream.offline',
+    CHANNEL_UPDATE: 'channel.update'
+}
+
+async function twitch_eventsub_stream_online(event) {
+    spawn_streamlink_instance({
+        token: config.streamlink.token,
+        path: path.join(config.streamlink.output, `${event.broadcaster_user_login}_${event.id}.stream.ts`),
+        url: `https://www.twitch.tv/${event.broadcaster_user_login}`
+    });
+}
+
 function eventsub_notification_handler(notification) {
     console
     switch (notification.subscription.type) {
+        case SUB_TYPE.STREAM_ONLINE:
+            twitch_eventsub_stream_online(notification.event);
+            break;
+
         default:
             console.log('eventsub: unknown event received');
             console.log(notification);
