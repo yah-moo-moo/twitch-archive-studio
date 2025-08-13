@@ -4,3 +4,7 @@ config.json
 tokens.json
 
 streamlink/
+
+server.log
+
+media/
