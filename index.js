@@ -114,16 +114,21 @@ async function twitch_api_delete_eventsub_subscription(id) {
 /**
  * 
  * @param {Object} options 
- * @param {Object} options.token 
- * @param {Object} options.path 
- * @param {Object} options.url
- * @returns Promise<void>
+ * @param {string} options.token
+ * @param {string} options.url
+ * @param {string} options.prefix
+ * @returns {Promise<void>}
  */
 async function spawn_streamlink_instance(options) {
     return new Promise((resolve) => {
+        const path_prefix = path.join(config.streamlink.output, `${options.prefix}.stream.`);
         const args = [
             `--twitch-api-header=Authorization=OAuth ${options.token}`,
-            '--output', options.path,
+            '--record', path_prefix + 'ts',
+            '--player', config.ffmpeg.path,
+            '--player-verbose',
+            '--player-args', `-c copy "${path_prefix}mp4" -i`,
+            '--player-no-close',
             '--hls-live-restart',
             '--loglevel', 'debug',
             '--stream-segment-threads', '10',
@@ -137,8 +142,8 @@ async function spawn_streamlink_instance(options) {
         logger.debug([config.streamlink.path, args].flat().join(' '));
         const process = spawn(config.streamlink.path, args, { shell: false, windowsHide: true, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
 
-        process.stderr.on('data', (data) => { console.log(data.toString()); });
-        process.stdout.on('data', (data) => { console.log(data.toString()); });
+        process.stderr.on('data', (data) => { console.log('err: ' + data.toString()); });
+        process.stdout.on('data', (data) => { console.log('out: ' + data.toString().trim()); });
         process.on('exit', () => resolve());
     });
 }
@@ -161,8 +166,8 @@ const SUB_TYPE = {
 async function twitch_eventsub_stream_online(event) {
     spawn_streamlink_instance({
         token: config.streamlink.token,
-        path: path.join(config.streamlink.output, `${event.broadcaster_user_login}_${event.id}.stream.ts`),
-        url: `https://www.twitch.tv/${event.broadcaster_user_login}`
+        url: `https://www.twitch.tv/${event.broadcaster_user_login}`,
+        prefix: event.broadcaster_user_login + '_' + event.id
     });
 }
 
