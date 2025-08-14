@@ -1,5 +1,6 @@
-import oauth from './oauth.js';
 import logger from './logger.js';
+import oauth from './oauth.js';
+import TwitchAPIClient from './twitch.js';
 
 import fs from 'node:fs/promises';
 import express from 'express';
@@ -39,74 +40,6 @@ async function twitch_api_validate_token() {
     return (res.status == 200);
 }
 
-async function twitch_api_get_all_eventsub_subscriptions() {
-    const token = await oauth.get('twitch');
-
-    const res = await fetch('https://api.twitch.tv/helix/eventsub/subscriptions', {
-        headers: {
-            'Client-Id': token.client_id,
-            Authorization: `Bearer ${token.access_token}`
-        }
-    });
-
-    const json = await res.json();
-    console.log(json);
-    return json.data ?? null;
-}
-
-async function twitch_api_create_eventsub_subscription(type, user_id) {
-    const token = await oauth.get('twitch');
-
-    const callback_uri = new URL(config.twitch.eventsub.callback_uri_path, get_eventsub_callback_uri_base());
-    const body = {
-        type: type.type,
-        version: type.version,
-        condition: {
-            broadcaster_user_id: user_id.toString()
-        },
-        transport: {
-            method: 'webhook',
-            callback: callback_uri.toString(),
-            secret: EVENTSUB_SECRET
-        }
-    };
-
-    const res = await fetch('https://api.twitch.tv/helix/eventsub/subscriptions', {
-        method: 'post',
-        headers: {
-            'Client-Id': token.client_id,
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token.access_token}`
-        },
-        body: JSON.stringify(body)
-    });
-    const payload = await res.json();
-    if (res.status == 202) {
-        console.log(`twitch: subscription '${user_id}/${type.type}' created with status '${payload.data[0].status}'`);
-        return payload;
-    } else {
-        console.log(`twitch: error creating subscription for '${user_id}/${type.type}'\n`);
-        console.log(payload);
-        return null;
-    }
-}
-
-async function twitch_api_delete_eventsub_subscription(id) {
-    console.log(`deleting eventsub subscription ${id}`);
-
-    const token = await oauth.get('twitch');
-
-    const res = await fetch(`https://api.twitch.tv/helix/eventsub/subscriptions?id=${id}`, {
-        method: 'delete',
-        headers: {
-            'Client-Id': token.client_id,
-            Authorization: `Bearer ${token.access_token}`
-        }
-    });
-
-    console.log(res.status);
-}
-
 //---
 
 /**
@@ -115,18 +48,21 @@ async function twitch_api_delete_eventsub_subscription(id) {
  * @param {string} options.token
  * @param {string} options.url
  * @param {string} options.prefix
+ * @param {string} options.transcode
  * @returns {Promise<void>}
  */
 async function spawn_streamlink_instance(options) {
     return new Promise((resolve) => {
-        const path_prefix = path.join(config.streamlink.output, `${options.prefix}.stream.`);
+        const path_prefix = path.join(config.streamlink.output, options.prefix);
         const args = [
             `--twitch-api-header=Authorization=OAuth ${options.token}`,
-            '--record', path_prefix + 'ts',
-            '--player', config.ffmpeg.path,
-            '--player-verbose',
-            '--player-args', `-c copy "${path_prefix}mp4" -i`,
-            '--player-no-close',
+            options.transcode ?
+                ['--record', path_prefix + 'ts',
+                    '--player', config.ffmpeg.path,
+                    '--player-verbose',
+                    '--player-args', `-c copy "${path_prefix}.mp4" -i`,
+                    '--player-no-close']
+                : ['--output', path_prefix + '.ts'],
             '--hls-live-restart',
             '--loglevel', 'debug',
             '--stream-segment-threads', '10',
@@ -165,7 +101,8 @@ async function twitch_eventsub_stream_online(event) {
     spawn_streamlink_instance({
         token: config.streamlink.token,
         url: `https://www.twitch.tv/${event.broadcaster_user_login}`,
-        prefix: event.broadcaster_user_login + '_' + event.id
+        prefix: event.broadcaster_user_login + '_' + event.id + '.stream',
+        transcode: true
     });
 }
 
@@ -229,10 +166,10 @@ const EVENTSUB_SUBSCRIPTION_TYPES = [
 ];
 
 async function delete_all_eventsub_subscriptions() {
-    const subs = await twitch_api_get_all_eventsub_subscriptions();
+    const subs = await twitch.get_all_eventsub_subscriptions();
 
     for (const s of subs) {
-        await twitch_api_delete_eventsub_subscription(s.id);
+        await twitch.delete_eventsub_subscription(s.id);
     }
 }
 
@@ -243,7 +180,7 @@ async function create_all_eventsub_subscriptions() {
 
     for (const b of broadcasters) {
         for (const t of EVENTSUB_SUBSCRIPTION_TYPES) {
-            await twitch_api_create_eventsub_subscription(t, b.id);
+            await twitch.create_eventsub_subscription(t, b.id);
         }
     }
 }
@@ -251,6 +188,8 @@ async function create_all_eventsub_subscriptions() {
 //---
 
 await get_app_config();
+const twitch = new TwitchAPIClient({ callback_uri: new URL(config.twitch.eventsub.callback_uri_path, get_eventsub_callback_uri_base()) });
+
 if (!await twitch_api_validate_token()) {
     process.exit(1);
 }
