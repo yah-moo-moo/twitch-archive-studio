@@ -4,7 +4,6 @@ import TwitchAPIClient from './twitch.js';
 import config from './config.js';
 
 import express from 'express';
-import crypto from 'node:crypto';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
@@ -69,8 +68,6 @@ async function spawn_streamlink_instance(options) {
 }
 
 //---
-
-const EVENTSUB_SECRET = crypto.randomBytes(32).toString('hex');
 
 function verify_eventsub_callback(req, res) {
     console.log(`verifying eventsub callback ${req.body.subscription.id}`);

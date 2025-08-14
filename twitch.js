@@ -1,5 +1,8 @@
 import oauth from './oauth.js';
 import logger from './logger.js';
+import crypto from 'node:crypto';
+
+const EVENTSUB_SECRET = crypto.randomBytes(32).toString('hex');
 
 export default class TwitchAPIClient {
     #options = null;
