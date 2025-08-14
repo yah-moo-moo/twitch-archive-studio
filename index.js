@@ -3,23 +3,10 @@ import oauth from './oauth.js';
 import TwitchAPIClient from './twitch.js';
 import config from './config.js';
 
-import fs from 'node:fs/promises';
 import express from 'express';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-
-async function get_app_config() {
-    try {
-        console.log('loading app config');
-
-        const text = await fs.readFile('config.json');
-        config = JSON.parse(text);
-    } catch (e) {
-        console.log('error loading app config');
-        console.log(e);
-    }
-}
 
 //---
 
