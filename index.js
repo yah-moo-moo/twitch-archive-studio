@@ -1,14 +1,13 @@
 import logger from './logger.js';
 import oauth from './oauth.js';
 import TwitchAPIClient from './twitch.js';
+import config from './config.js';
 
 import fs from 'node:fs/promises';
 import express from 'express';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-
-let config = null;
 
 async function get_app_config() {
     try {
@@ -187,7 +186,6 @@ async function create_all_eventsub_subscriptions() {
 
 //---
 
-await get_app_config();
 const twitch = new TwitchAPIClient({ callback_uri: new URL(config.twitch.eventsub.callback_uri_path, get_eventsub_callback_uri_base()) });
 
 if (!await twitch_api_validate_token()) {
