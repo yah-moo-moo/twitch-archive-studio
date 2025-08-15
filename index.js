@@ -34,6 +34,7 @@ async function twitch_api_validate_token() {
  * @param {string} options.url
  * @param {string} options.prefix
  * @param {string} options.transcode
+ * @param {string} options.reload_on_error
  * @returns {Promise<void>}
  */
 async function spawn_streamlink_instance(options) {
@@ -62,7 +63,38 @@ async function spawn_streamlink_instance(options) {
         const process = spawn(config.streamlink.path, args, { shell: false, windowsHide: true, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
 
         process.stderr.on('data', (data) => { console.log('err: ' + data.toString()); });
-        process.stdout.on('data', (data) => { console.log('out: ' + data.toString().trim()); });
+
+        let reload_count = 0;
+        let last_update = null;
+        let spawned_reload = false;
+
+        process.stdout.on('data', (data) => {
+            console.log('out: ' + data.toString().trim());
+
+            let found = data.toString().match(/Segment (\d+) complete/);
+            if (found) {
+                last_update = Date.now();
+            }
+
+            found = data.toString().startsWith('[stream.hls][warning] Failed to reload playlist');
+            if (found && last_update != null) {
+                reload_count++;
+            }
+
+            if (options.reload_on_error && reload_count > 2 && !spawned_reload) {
+                const new_options = {
+                    token: options.token,
+                    url: options.url,
+                    prefix: options.prefix + '-retry' + Date.now().toString(),
+                    transcode: options.transcode,
+                    reload_on_error: options.reload_on_error
+                };
+                spawned_reload = true;
+                spawn_streamlink_instance(new_options);
+            }
+
+        });
+
         process.on('exit', () => resolve());
     });
 }
@@ -85,7 +117,8 @@ async function twitch_eventsub_stream_online(event) {
         token: config.streamlink.token,
         url: `https://www.twitch.tv/${event.broadcaster_user_login}`,
         prefix: event.broadcaster_user_login + '_' + event.id + '.stream',
-        transcode: true
+        transcode: true,
+        reload_on_error: true
     });
 }
 
